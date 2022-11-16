@@ -14,7 +14,10 @@ void csp(int *p, int base) {
   int val;
   int cp[2];
   int forked = 0;
+  // number only flows from parent to us
   close(p[1]);
+  
+  // continuously read data from parent 
   while(read(p[0], &val, 4) > 0) {
     if(val == base) {
       fprintf(1, "prime %d\n", val);
@@ -37,6 +40,7 @@ void csp(int *p, int base) {
   if(forked) {
     close(cp[1]);
   }
+  // remember to wait, otherwize parents of this process would exit immediately
   wait(&pid);
 }
 
@@ -54,8 +58,10 @@ main(int argc, char *argv[]) {
 
   pid = fork();
   if(pid == 0){
+    // first level of csp
     csp(p, 2);
   }else {
+    // parent process only supplies number
     close(p[0]);
     for(i = 2; i <= 35; i++) {
       write(p[1], &i, sizeof(i));
