@@ -26,6 +26,8 @@ main(int argc, char *argv[]) {
   pid = fork();
   if(pid == 0) {
     // child
+    close(cp[0]);
+
     read(pp[0], buf, 1);
     close(pp[0]);
     
@@ -37,6 +39,8 @@ main(int argc, char *argv[]) {
 
   }else {
     // parent
+    close(pp[0]);
+
     write(pp[1], "", 1);
     close(pp[1]);
 
