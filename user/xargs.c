@@ -33,11 +33,20 @@ main(int argc, char *argv[]) {
   }
 
   new_arg_idx = arg_idx;
-  //fprintf(1, "%s\n\n", buf);
-
-  // status: 0 -> space
-  // status: 1 -> args
-  // status: 2 -> newline
+  
+  // simple state machine
+  // status: 0 
+  //   whilespace             -> 0
+  //   char except '\n' & ' ' -> 1           
+  //   '\n'                   -> 2
+  // status: 1
+  //   whiltespace            -> 0
+  //   '\n'                   -> 2
+  //   char except '\n' & ' ' -> 1
+  // status: 2
+  //   fork and exec, reset 
+  //   status                 -> 0
+  
   status = 0;
   i = 0;
   while(i < input_size) {
