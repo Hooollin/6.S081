@@ -11,41 +11,37 @@ void open_pipe(int *p) {
 
 int
 main(int argc, char *argv[]) {
-  int pp[2];
-  int cp[2];
+  int p[2];
   int pid;
   char buf[1];
   if(argc > 1) {
     fprintf(2, "pingpong: too many arguments, expect: 0, got: %d\n", argc);
     exit(-1);
   }
-
-  open_pipe(pp);
-  open_pipe(cp);
+  
+  open_pipe(p);
 
   pid = fork();
   if(pid == 0) {
     // child
-    close(cp[0]);
-
-    read(pp[0], buf, 1);
-    close(pp[0]);
+    read(p[0], buf, 1);
+    close(p[0]);
     
     pid = getpid();
     fprintf(1, "%d: received ping\n", pid);
 
-    write(cp[1], "", 1);
-    close(cp[1]);
-
+    write(p[1], "", 1);
+    close(p[1]);
   }else {
     // parent
-    close(pp[0]);
+    write(p[1], "", 1);
+    close(p[1]);
+    
+    // must wait, otherwize read previously readed data
+    wait(0);
 
-    write(pp[1], "", 1);
-    close(pp[1]);
-
-    read(cp[0], buf, 1);
-    close(cp[0]);
+    read(p[0], buf, 1);
+    close(p[0]);
 
     pid = getpid();
     fprintf(1, "%d: received pong\n", pid);
