@@ -128,7 +128,7 @@ void
 ukvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm)
 {
   if(mappages(pagetable, va, sz, pa, perm) != 0)
-    panic("uvmmap");
+    panic("ukvmmap");
 }
 
 // translate a kernel virtual address to
