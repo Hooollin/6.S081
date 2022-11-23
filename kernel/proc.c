@@ -20,6 +20,7 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern char etext[];
 
 // initialize the proc table at boot time.
 void
@@ -30,16 +31,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -121,6 +112,24 @@ found:
     return 0;
   }
 
+  // An direct mapped kernel page table.
+  p->kernel_pagetable = proc_kernel_pagetable(p);
+  if(p->kernel_pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  ukvmmap(p->kernel_pagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -139,9 +148,21 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  
+  // maybe uvmunmap works better here
+  if(p->kstack) {
+    pte_t *pte = walk(p->kernel_pagetable, p->kstack, 0);
+    kfree((void*)PTE2PA(*pte));
+  }
+  p->kstack = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kernel_pagetable)
+    proc_freekernelpagetable(p->kernel_pagetable, p->kstack);
+
   p->pagetable = 0;
+  p->kernel_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -185,6 +206,37 @@ proc_pagetable(struct proc *p)
   return pagetable;
 }
 
+pagetable_t 
+proc_kernel_pagetable(struct proc* p) {
+  pagetable_t pagetable = uvmcreate();
+  if(pagetable == 0) {
+    return 0;
+  }
+  // uart registers
+  ukvmmap(pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  ukvmmap(pagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  ukvmmap(pagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  ukvmmap(pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  ukvmmap(pagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  ukvmmap(pagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  ukvmmap(pagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return pagetable;
+}
+
 // Free a process's page table, and free the
 // physical memory it refers to.
 void
@@ -193,6 +245,45 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+// Free a process's kernel page table, and free the
+// physical memory it refers to.
+void
+proc_freekernelpagetable(pagetable_t pagetable, uint64 kstack)
+{
+  // I tried to unmap all the direct mapping in the beginning,
+  // but maybe it tooks too long too unmap them all,
+  // and I came up with the idea that actually we don't need to
+  // care about the mapping, just free the pagetable is good enough.
+  // So modify the freewalk without checkout whether it's leaf or not
+  // would do.
+
+//  // unmap uart registers
+//  uvmunmap(pagetable, UART0, 1, 0);
+//
+//  // unmap virtio mmio disk interface
+//  uvmunmap(pagetable, VIRTIO0, 1, 0);
+//
+//  // unmap CLINT
+//  uvmunmap(pagetable, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+//
+//  // unmap PLIC
+//  uvmunmap(pagetable, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
+//
+//  // unmap kernel text executable and read-only.
+//  uvmunmap(pagetable, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE)/PGSIZE, 0);
+//
+//  // unmap kernel data and the physical RAM we'll make use of.
+//  uvmunmap(pagetable, (uint64)etext, PGROUNDUP(PHYSTOP-(uint64)etext)/PGSIZE, 0);
+//
+//  // unmap the trampoline for trap entry/exit to
+//  // the highest virtual address in the kernel.
+//  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+//
+  // unmap the kernel stack, also free it physical memory.
+  // free kernel pagetable
+  unsafe_freewalk(pagetable);
 }
 
 // a user program that calls exec("/init")
@@ -473,6 +564,10 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        w_satp(MAKE_SATP(p->kernel_pagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
