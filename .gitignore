@@ -22,3 +22,7 @@ xv6.out*
 submissions/
 ph
 barrier
+
+.cache/
+compile_commands.json
+gradelib.pyc
