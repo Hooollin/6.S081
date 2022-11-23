@@ -20,9 +20,6 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
-  if(p->pid == 1) {
-    vmprint(p->pagetable);
-  }
 
   begin_op();
 
@@ -115,9 +112,16 @@ exec(char *path, char **argv)
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
   p->sz = sz;
+
+  u2kvmcopy(p->pagetable, p->kernel_pagetable, 0, sz);
+
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  if(p->pid == 1) {
+    vmprint(p->pagetable);
+  }
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
