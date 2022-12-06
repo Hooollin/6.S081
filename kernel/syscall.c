@@ -105,28 +105,94 @@ extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 
+uint64 sys_sigalarm(void) {
+  int n;
+  uint64 p;
+  if(argint(0, &n) < 0)
+    return -1;
+  if(argaddr(1, &p) < 0) {
+    return -1;
+  }
+  //printf("sigalarm: %d\n, %p\n", p, myproc()->trapframe->a1);
+
+  //uint64 pa = walkaddr(myproc()->pagetable, p);
+  myproc()->ticks = n;
+  myproc()->handler = p;
+  //myproc()->handler = (void (*)(void))p;
+  
+  return 0;
+}
+
+void fill_trapframe(void) {
+  struct proc *p = myproc();
+  p->trapframe->kernel_satp = p->alarm_trapframe->kernel_satp;
+  p->trapframe->kernel_sp   = p->alarm_trapframe->kernel_sp;
+  p->trapframe->kernel_trap = p->alarm_trapframe->kernel_trap;
+  p->trapframe->epc = p->alarm_trapframe->epc;
+  p->trapframe->kernel_hartid = p->alarm_trapframe->kernel_hartid;
+  p->trapframe->ra = p->alarm_trapframe->ra;
+  p->trapframe->sp = p->alarm_trapframe->sp;
+  p->trapframe->gp = p->alarm_trapframe->gp;
+  p->trapframe->tp = p->alarm_trapframe->tp;
+  p->trapframe->t0 = p->alarm_trapframe->t0;
+  p->trapframe->t1 = p->alarm_trapframe->t1;
+  p->trapframe->t2 = p->alarm_trapframe->t2;
+  p->trapframe->s0 = p->alarm_trapframe->s0;
+  p->trapframe->s1 = p->alarm_trapframe->s1;
+  p->trapframe->a0 = p->alarm_trapframe->a0;
+  p->trapframe->a1 = p->alarm_trapframe->a1;
+  p->trapframe->a2 = p->alarm_trapframe->a2;
+  p->trapframe->a3 = p->alarm_trapframe->a3;
+  p->trapframe->a4 = p->alarm_trapframe->a4;
+  p->trapframe->a5 = p->alarm_trapframe->a5;
+  p->trapframe->a6 = p->alarm_trapframe->a6;
+  p->trapframe->a7 = p->alarm_trapframe->a7;
+  p->trapframe->s2 = p->alarm_trapframe->s2;
+  p->trapframe->s3 = p->alarm_trapframe->s3;
+  p->trapframe->s4 = p->alarm_trapframe->s4;
+  p->trapframe->s5 = p->alarm_trapframe->s5;
+  p->trapframe->s6 = p->alarm_trapframe->s6;
+  p->trapframe->s7 = p->alarm_trapframe->s7;
+  p->trapframe->s8 = p->alarm_trapframe->s8;
+  p->trapframe->s9 = p->alarm_trapframe->s9;
+  p->trapframe->s10 = p->alarm_trapframe->s10;
+  p->trapframe->s11 = p->alarm_trapframe->s11;
+  p->trapframe->t3 = p->alarm_trapframe->t3;
+  p->trapframe->t4 = p->alarm_trapframe->t4;
+  p->trapframe->t5 = p->alarm_trapframe->t5;
+  p->trapframe->t6 = p->alarm_trapframe->t6;
+}
+
+uint64 sys_sigreturn(void) {
+  fill_trapframe();
+  myproc()->in_alarm_handler = 0;
+  return 0;
+}
+
 static uint64 (*syscalls[])(void) = {
-[SYS_fork]    sys_fork,
-[SYS_exit]    sys_exit,
-[SYS_wait]    sys_wait,
-[SYS_pipe]    sys_pipe,
-[SYS_read]    sys_read,
-[SYS_kill]    sys_kill,
-[SYS_exec]    sys_exec,
-[SYS_fstat]   sys_fstat,
-[SYS_chdir]   sys_chdir,
-[SYS_dup]     sys_dup,
-[SYS_getpid]  sys_getpid,
-[SYS_sbrk]    sys_sbrk,
-[SYS_sleep]   sys_sleep,
-[SYS_uptime]  sys_uptime,
-[SYS_open]    sys_open,
-[SYS_write]   sys_write,
-[SYS_mknod]   sys_mknod,
-[SYS_unlink]  sys_unlink,
-[SYS_link]    sys_link,
-[SYS_mkdir]   sys_mkdir,
-[SYS_close]   sys_close,
+[SYS_fork]        sys_fork,
+[SYS_exit]        sys_exit,
+[SYS_wait]        sys_wait,
+[SYS_pipe]        sys_pipe,
+[SYS_read]        sys_read,
+[SYS_kill]        sys_kill,
+[SYS_exec]        sys_exec,
+[SYS_fstat]       sys_fstat,
+[SYS_chdir]       sys_chdir,
+[SYS_dup]         sys_dup,
+[SYS_getpid]      sys_getpid,
+[SYS_sbrk]        sys_sbrk,
+[SYS_sleep]       sys_sleep,
+[SYS_uptime]      sys_uptime,
+[SYS_open]        sys_open,
+[SYS_write]       sys_write,
+[SYS_mknod]       sys_mknod,
+[SYS_unlink]      sys_unlink,
+[SYS_link]        sys_link,
+[SYS_mkdir]       sys_mkdir,
+[SYS_close]       sys_close,
+[SYS_sigalarm]    sys_sigalarm,
+[SYS_sigreturn]   sys_sigreturn,
 };
 
 void
