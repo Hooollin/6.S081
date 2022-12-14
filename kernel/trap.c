@@ -67,6 +67,36 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 0xf || r_scause() == 0xd){
+    uint64 va = r_stval();
+    do{
+      if(va >= myproc()->sz || va <= PGROUNDDOWN(myproc()->trapframe->sp)) {
+        printf("usertrap(): invalid va: %p\n", va);
+        p->killed = 1;
+        break;
+      }
+
+      char *mem = kalloc();
+      if(mem == 0) {
+        printf("usertrap(): kalloc failed\n");
+        p->killed = 1;
+        break;
+      }
+      memset(mem, 0, PGSIZE);
+      
+      // PGROUNDDOWN是必须的，原因有一些tricky：
+      // 在mappages中有 a = PGROUNDDOWN(va)，起始地址正确，但是
+      // last = PGROUNDDOWN(va + size - 1)在va不对齐情况下
+      // 将会多映射一页，最终导致uvmunmap在freewalk尝试free不属于它的
+      // 内存导致panic
+      if(mappages(myproc()->pagetable, PGROUNDDOWN(va), PGSIZE, 
+                  (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+        kfree(mem);
+        printf("usertrap(): mappages failed\n");
+        p->killed = 1;
+        break;
+      }
+    }while(0);
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
